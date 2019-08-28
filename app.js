@@ -1,3 +1,5 @@
+var dotenv = require("dotenv");
+dotenv.config();
 var createError = require("http-errors");
 var express = require("express");
 var path = require("path");
@@ -5,23 +7,61 @@ var cookieParser = require("cookie-parser");
 var logger = require("morgan");
 var request = require("request");
 var session = require("express-session");
-
+var passport = require("passport");
+var Auth0Strategy = require("passport-auth0");
+var userInViews = require("./lib/middleware/userInViews");
+var authRouter = require("./routes/auth");
 var indexRouter = require("./routes/index");
 var usersRouter = require("./routes/users");
 
 var app = express();
 
+// config express-session
+var sess = {
+  secret: "random",
+  cookie: {},
+  resave: false,
+  saveUninitialized: true
+};
+
+if (app.get("env") === "production") {
+  sess.cookie.secure = true; // serve secure cookies, requires https
+}
+
+app.use(session(sess));
+// Configure Passport to use Auth0
+var strategy = new Auth0Strategy(
+  {
+    domain: process.env.AUTH0_DOMAIN,
+    clientID: process.env.AUTH0_CLIENT_ID,
+    clientSecret: process.env.AUTH0_CLIENT_SECRET,
+    callbackURL:
+      process.env.AUTH0_CALLBACK_URL || "http://localhost:3000/callback"
+  },
+  function(accessToken, refreshToken, extraParams, profile, done) {
+    // accessToken is the token to call Auth0 API (not needed in the most cases)
+    // extraParams.id_token has the JSON Web Token
+    // profile has all the information from the user
+    return done(null, profile);
+  }
+);
+
+passport.use(strategy);
+
+app.use(passport.initialize());
+app.use(passport.session());
+
+passport.serializeUser(function(user, done) {
+  done(null, user);
+});
+
+passport.deserializeUser(function(user, done) {
+  done(null, user);
+});
+
 // view engine setup
 app.set("views", path.join(__dirname, "views"));
 app.set("view engine", "jade");
-
-app.use(
-  session({
-    secret: "keyboard cat",
-    resave: false,
-    saveUninitialized: true
-  })
-);
 
 app.use(logger("dev"));
 app.use(express.json());
@@ -29,84 +69,10 @@ app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
 
-// app.use("/", indexRouter);
-// app.use("/login", indexRouter);
-app.get("/", function(req, res, next) {
-  res.render("index", { title: "Express" });
-});
-// app.use("/users", usersRouter);
-
-// app.use("/login");
-// catch 404 and forward to error handler
-
-const tenant = "express-example";
-const client_id = "USycC2noNic1zGZXxlWXSWqKPI4gvakp";
-const client_secret =
-  "KFn29bWEmu6iXVPjj5PMYmBp-yj9EDEDsHM0kjNv5gnNMPSfVj7Tpvl1vhxgcUh1";
-const redirect_uri = "http://localhost:3000/callback";
-
-function randomString() {
-  let rnd = "";
-  for (a = 0; a < 10; a++) {
-    rnd += parseInt(Math.random() * 10);
-  }
-  return rnd;
-}
-
-app.get("/login", function(req, res) {
-  req.session.states = req.session.states || [];
-
-  const state = randomString();
-
-  req.session.states.push(state);
-
-  res.redirect(
-    `https://${tenant}.auth0.com/authorize?client_id=${client_id}&response_type=code&state=${state}&redirect_uri=${redirect_uri}`
-  );
-});
-
-app.get("/callback", function(req, res, next) {
-  const code = req.query.code;
-  const callbackSTate = req.query.state;
-
-  req.session.states = req.session.states || [];
-
-  if (req.session.states.indexOf(callbackSTate) === -1) {
-    return res.send("INVALID STATE");
-  }
-
-  req.session.states = req.session.states.filter(i => i !== callbackSTate);
-
-  request.post(
-    `https://${tenant}.auth0.com/oauth/token`,
-    {
-      form: {
-        client_id,
-        client_secret,
-        redirect_uri,
-        grant_type: "authorization_code",
-        code
-      }
-    },
-    function(err, httpResponse, body) {
-      const json = JSON.parse(body);
-      const token = json.access_token;
-
-      request.post(
-        `https://${tenant}.auth0.com/userinfo`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        },
-        function(err, httpResponse, body) {
-          res.json(body);
-        }
-      );
-    }
-  );
-});
-
+app.use(userInViews());
+app.use("/", authRouter);
+app.use("/", indexRouter);
+app.use("/", usersRouter);
 app.use(function(req, res, next) {
   next(createError(404));
 });

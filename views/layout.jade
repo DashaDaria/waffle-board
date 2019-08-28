@@ -4,4 +4,11 @@ html
     title= title
     link(rel='stylesheet', href='/stylesheets/style.css')
   body
+    if locals.user
+      a(href="/"): button(type="button") HOME
+      a(href="/user"): button(type="button") Profile
+      a(href="/logout"): button(type="button") Log Out
+    else
+      a(href="/"): button(type="button") HOME
+      a(href="/login"): button(type="button") Log In
     block content
