@@ -12,7 +12,8 @@ dotenv.config();
 router.get(
   "/login",
   passport.authenticate("auth0", {
-    scope: "openid email profile"
+    scope: "openid email profile",
+    audience: "https://something.com"
   }),
   function(req, res) {
     res.redirect("/");
@@ -22,6 +23,7 @@ router.get(
 // Perform the final stage of authentication and redirect to previously requested URL or '/user'
 router.get("/callback", function(req, res, next) {
   passport.authenticate("auth0", function(err, user, info) {
+    console.log(info);
     if (err) {
       return next(err);
     }
